@@ -100,8 +100,11 @@ Item {
   onConfiguredChanged: {
     phase = configured ? "loading" : "setup"
     if (configured) Qt.callLater(refresh)
+    restartLive()
   }
-  onServerChanged: { logos = ({}); if (configured) Qt.callLater(refresh) }
+  onServerChanged: { logos = ({}); if (configured) Qt.callLater(refresh); restartLive() }
+  onClientIdChanged: restartLive()
+  onClientSecretChanged: restartLive()
 
   Timer {
     interval: 1000
@@ -111,13 +114,68 @@ Item {
   }
   Timer {
     id: pollTimer
-    interval: root.panelOpen ? 5000 : Math.max(10, Number(root.settings && root.settings.pollSeconds) || 15) * 1000
+    // With the live stream up, polling is only a safety net.
+    interval: root.liveConnected ? 120000 : root.panelOpen ? 5000 : Math.max(10, Number(root.settings && root.settings.pollSeconds) || 15) * 1000
     repeat: true
     running: root.configured
     triggeredOnStart: true
     onTriggered: root.refresh()
   }
   onPanelOpenChanged: if (panelOpen && configured) refresh()
+
+  // ---- live updates --------------------------------------------------------
+  // The server pushes a message over a WebSocket (/api/v1/live) whenever a
+  // session or device changes. QML's WebSocket can't send the Access headers,
+  // so curl holds the socket; each message only triggers a refresh, its
+  // content is never parsed. The headers reach curl through a here-document,
+  // so the secret never appears in a process's arguments. If curl is missing
+  // or the socket drops, it reconnects with backoff and polling carries on.
+  property bool liveConnected: false
+  property int liveRetryMs: 1000
+  property real liveStartedAt: 0
+
+  function restartLive() {
+    liveRetry.stop()
+    if (live.running) live.running = false   // onExited reconnects
+    else if (configured) liveRetry.restart()
+  }
+
+  Process {
+    id: live
+    command: ["sh", "-c",
+      'd="$2"; exec curl -sS -N --fail -o - -H @/dev/fd/3 "$1/api/v1/live" 3<<EOF\n' +
+      'CF-Access-Client-Id: $(cat "$d/client-id")\n' +
+      'CF-Access-Client-Secret: $(cat "$d/client-secret")\n' +
+      'EOF\n',
+      "time-switch-live", root.server.replace(/^https:/, "wss:"), root.configDir]
+    stdout: SplitParser {
+      // Messages arrive back to back with no separator; any data will do.
+      splitMarker: ""
+      onRead: {
+        root.liveConnected = true
+        liveDebounce.restart()
+      }
+    }
+    onStarted: root.liveStartedAt = Date.now()
+    onExited: {
+      root.liveConnected = false
+      // A connection that lasted a while just idled out: reconnect at once.
+      // Quick failures back off up to a minute.
+      if (Date.now() - root.liveStartedAt > 30000) root.liveRetryMs = 1000
+      else root.liveRetryMs = Math.min(60000, root.liveRetryMs * 2)
+      if (root.configured) liveRetry.restart()
+    }
+  }
+  Timer {
+    id: liveRetry
+    interval: root.liveRetryMs
+    onTriggered: if (root.configured && !live.running) live.running = true
+  }
+  Timer {
+    id: liveDebounce
+    interval: 250
+    onTriggered: root.refresh()
+  }
 
   // ---- HTTP ----------------------------------------------------------------
   readonly property int maxBytes: 512 * 1024
@@ -183,8 +241,12 @@ Item {
   // One round: status first (it decides what else is worth asking), then
   // companies, totals, periods and the last finished session in parallel.
   property bool refreshing: false
+  property bool refreshQueued: false
+  onRefreshingChanged: if (!refreshing && refreshQueued) { refreshQueued = false; Qt.callLater(refresh) }
   function refresh() {
-    if (!configured || refreshing) return
+    if (!configured) return
+    // A change pushed mid-refresh must not be lost: run once more after.
+    if (refreshing) { refreshQueued = true; return }
     refreshing = true
     request("GET", "/api/v1/status", null, function(error, data) {
       if (fail(error)) { refreshing = false; return }

@@ -39,7 +39,7 @@ They're saved to `~/.config/omarchy/time-switch/` (folder `700`, files `600`) an
 
 For a keybinding: `omarchy-shell jaren.timeswitch toggleSession`. `status`, `refresh`, `open` and `close` are also available.
 
-The widget refreshes every 15 seconds, or every 5 while the panel is open (setting: `pollSeconds`).
+Changes show up within about a second. The server announces every start and stop on its live WebSocket, and the widget keeps it open with `curl`, which sends the token headers that QML's own WebSocket can't. If the socket is down, or `curl` is missing, the widget falls back to refreshing every 15 seconds, or every 5 while the panel is open (setting: `pollSeconds`).
 
 ## Notes
 
