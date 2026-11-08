@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "jaren.timeswitch",
+  "name": "Time Switch",
+  "version": "0.1.0",
+  "author": "Jaren Kempton",
+  "license": "MIT",
+  "description": "Shows the running Time Switch session in the bar and starts or stops sessions through a Cloudflare Access service token.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Time Switch",
+    "description": "Running session, today and week totals, pay-period hours, and one-key start or stop.",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "centerEnd",
+    "defaults": {
+      "server": "",
+      "pollSeconds": 15
+    },
+    "schema": [
+      {
+        "key": "server",
+        "type": "string",
+        "label": "Server (leave empty to use the one saved from the panel)",
+        "defaultValue": ""
+      },
+      {
+        "key": "pollSeconds",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 10,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 15
+      }
+    ]
+  }
+}
