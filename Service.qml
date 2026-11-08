@@ -130,6 +130,9 @@ Item {
   // content is never parsed. The headers reach curl through a here-document,
   // so the secret never appears in a process's arguments. If curl is missing
   // or the socket drops, it reconnects with backoff and polling carries on.
+  // TCP keepalives notice a socket that died during suspend, and each
+  // connection is capped at 15 minutes, so a curl orphaned by a crashed
+  // shell exits on its own.
   property bool liveConnected: false
   property int liveRetryMs: 1000
   property real liveStartedAt: 0
@@ -143,7 +146,7 @@ Item {
   Process {
     id: live
     command: ["sh", "-c",
-      'd="$2"; exec curl -sS -N --fail -o - -H @/dev/fd/3 "$1/api/v1/live" 3<<EOF\n' +
+      'd="$2"; exec curl -sS -N --fail --keepalive-time 15 --max-time 900 -o - -H @/dev/fd/3 "$1/api/v1/live" 3<<EOF\n' +
       'CF-Access-Client-Id: $(cat "$d/client-id")\n' +
       'CF-Access-Client-Secret: $(cat "$d/client-secret")\n' +
       'EOF\n',
